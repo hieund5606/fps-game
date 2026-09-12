@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>FPS 3D - Trường Học Bỏ Hoang</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Segoe UI', Arial, sans-serif; }
+  canvas#gameCanvas { display: block; width: 100%; height: 100%; }
+
+  #hud { position: fixed; inset: 0; pointer-events: none; display: none; z-index: 10; }
+
+  #crosshair { position: absolute; top: 50%; left: 50%; width: 24px; height: 24px; transform: translate(-50%, -50%); }
+  #crosshair::before, #crosshair::after { content: ''; position: absolute; background: #00ff66; }
+  #crosshair::before { left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-50%); }
+  #crosshair::after { top: 50%; left: 0; height: 2px; width: 100%; transform: translateY(-50%); }
+  #crosshair .dot { position: absolute; top: 50%; left: 50%; width: 4px; height: 4px; background: #00ff66; border-radius: 50%; transform: translate(-50%,-50%); }
+
+  #topLeftHud { position: absolute; top: 16px; left: 16px; color: #fff; text-shadow: 2px 2px 3px rgba(0,0,0,0.9); }
+  #score { font-size: 24px; font-weight: bold; color: #ffd700; }
+  #levelInfo { font-size: 16px; margin-top: 4px; color: #9fe; }
+  #enemyCount { font-size: 14px; margin-top: 2px; color: #ccc; }
+  #bossHealthWrap { margin-top: 8px; width: 220px; display: none; }
+  #bossHealthLabel { font-size: 13px; color: #ff6666; margin-bottom: 2px; }
+  #bossHealthBarBg { width: 100%; height: 14px; background: rgba(0,0,0,0.6); border: 1px solid #a00; border-radius: 4px; overflow: hidden; }
+  #bossHealthBarFill { height: 100%; width: 100%; background: linear-gradient(90deg, #a00, #f33); transition: width 0.2s; }
+
+  #heartsWrap { position: absolute; bottom: 25px; left: 25px; display: flex; gap: 4px; }
+  .heart { font-size: 28px; filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.7)); }
+  .heart.empty { opacity: 0.25; }
+
+  #weaponHud { position: absolute; bottom: 25px; right: 25px; text-align: right; color: #fff; text-shadow: 2px 2px 3px rgba(0,0,0,0.8); }
+  #weaponName { font-size: 20px; font-weight: bold; color: #ffcc00; letter-spacing: 1px; }
+  #ammoCount { font-size: 34px; font-weight: bold; }
+  #ammoMax { font-size: 16px; color: #aaa; }
+  #reloadHint { font-size: 13px; color: #ffcc00; margin-top: 2px; min-height: 16px; }
+  #sprintHint { font-size: 12px; color: #7fdcff; margin-top: 2px; }
+
+  #minimapWrap {
+    position: absolute; top: 16px; right: 16px; width: 150px; height: 150px;
+    border: 2px solid rgba(255,255,255,0.5); border-radius: 8px; overflow: hidden;
+    background: rgba(10,10,10,0.7);
+  }
+  #minimapCanvas { width: 100%; height: 100%; display: block; }
+
+  #hitFlash { position: fixed; inset: 0; background: rgba(255,0,0,0.25); opacity: 0; pointer-events: none; transition: opacity 0.15s; z-index: 9; }
+  #zoomVignette { position: fixed; inset: 0; pointer-events: none; z-index: 8; display: none; background: radial-gradient(circle, transparent 30%, #000 68%); }
+  #levelBanner {
+    position: fixed; top: 40%; left: 50%; transform: translate(-50%, -50%);
+    font-size: 38px; color: #fff; text-shadow: 3px 3px 6px #000; opacity: 0;
+    transition: opacity 0.5s; z-index: 15; pointer-events: none; text-align: center;
+  }
+
+  .overlay {
+    position: fixed; inset: 0; background: rgba(6,6,10,0.92);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: #fff; z-index: 20; text-align: center;
+  }
+  .overlay h1 { font-size: 44px; margin-bottom: 12px; letter-spacing: 2px; }
+  .overlay p { font-size: 15px; color: #ccc; margin-bottom: 20px; max-width: 560px; line-height: 1.6; }
+  .btn {
+    padding: 13px 38px; font-size: 18px; font-weight: bold; margin: 6px;
+    background: linear-gradient(90deg, #00c853, #00e676);
+    border: none; border-radius: 8px; color: #000; cursor: pointer;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.4); transition: transform 0.1s; pointer-events: all;
+  }
+  .btn:hover { transform: scale(1.05); }
+  .btn:disabled { background: #555; color: #999; cursor: not-allowed; transform: none; }
+  .btn.secondary { background: linear-gradient(90deg, #607d8b, #78909c); }
+  .btn.danger { background: linear-gradient(90deg, #d32f2f, #f44336); color: #fff; }
+  #gameOverScreen h1 { color: #ff4444; }
+  .hidden { display: none !important; }
+  #finalScore, #finalLevel { font-size: 20px; color: #ffd700; margin-bottom: 8px; }
+
+  #settingsScreen .settingRow { display: flex; align-items: center; gap: 14px; width: 380px; margin: 12px 0; }
+  #settingsScreen label { width: 150px; text-align: left; }
+  #settingsScreen input[type=range] { flex: 1; }
+  #settingsScreen .val { width: 40px; text-align: right; color: #9fe; }
+</style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<div id="menuScreen" class="overlay">
+  <h1>🧟 TRƯỜNG HỌC BỎ HOANG</h1>
+  <p>
+    WASD: di chuyển · Giữ Shift: chạy nhanh · Chuột: xoay góc nhìn · Click trái: bắn (giữ để bắn liên thanh với SMG)<br>
+    Giữ chuột phải: zoom (Sniper) · Phím 1/2/3/4: đổi súng · R: nạp đạn · Space: nhảy<br>
+    Sống sót càng lâu càng khó — cứ mỗi 5 màn sẽ có 1 BOSS xuất hiện!
+  </p>
+  <button class="btn" id="newGameBtn">▶ CHƠI MỚI</button>
+  <button class="btn secondary" id="continueBtn">⏵ TIẾP TỤC</button>
+  <button class="btn secondary" id="settingsBtn">⚙ CÀI ĐẶT</button>
+  <button class="btn danger" id="exitBtn">✖ THOÁT</button>
+</div>
+
+<div id="settingsScreen" class="overlay hidden">
+  <h1>⚙ CÀI ĐẶT</h1>
+  <div class="settingRow">
+    <label>Âm lượng</label>
+    <input type="range" id="volumeSlider" min="0" max="100" value="60">
+    <span class="val" id="volumeVal">60%</span>
+  </div>
+  <div class="settingRow">
+    <label>Độ nhạy chuột</label>
+    <input type="range" id="sensSlider" min="10" max="300" value="100">
+    <span class="val" id="sensVal">1.0x</span>
+  </div>
+  <button class="btn" id="settingsBackBtn">⬅ QUAY LẠI</button>
+</div>
+
+<div id="gameOverScreen" class="overlay hidden">
+  <h1>☠ GAME OVER</h1>
+  <div id="finalScore"></div>
+  <div id="finalLevel"></div>
+  <button class="btn" id="restartBtn">↻ CHƠI LẠI</button>
+  <button class="btn secondary" id="backToMenuBtn">⬅ VỀ MENU</button>
+</div>
+
+<div id="hud">
+  <div id="crosshair"><div class="dot"></div></div>
+
+  <div id="topLeftHud">
+    <div id="score">Điểm: 0</div>
+    <div id="levelInfo">Màn: 1</div>
+    <div id="enemyCount">Zombie còn lại: 0</div>
+    <div id="bossHealthWrap">
+      <div id="bossHealthLabel">☠ MÁU BOSS</div>
+      <div id="bossHealthBarBg"><div id="bossHealthBarFill"></div></div>
+    </div>
+  </div>
+
+  <div id="heartsWrap"></div>
+
+  <div id="weaponHud">
+    <div id="weaponName">SÚNG LỤC</div>
+    <div><span id="ammoCount">30</span> <span id="ammoMax">/ 30</span></div>
+    <div id="reloadHint"></div>
+    <div id="sprintHint"></div>
+  </div>
+
+  <div id="minimapWrap"><canvas id="minimapCanvas" width="150" height="150"></canvas></div>
+
+  <div id="levelBanner"></div>
+</div>
+
+<div id="hitFlash"></div>
+<div id="zoomVignette"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module" src="main.js"></script>
+</body>
+</html>
