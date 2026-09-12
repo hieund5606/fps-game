@@ -1,19 +1,32 @@
 // ============================================================================
 // MAIN.JS — FPS 3D ZOMBIE: TRƯỜNG HỌC BỎ HOANG
-// ĐÃ FIX:
-//   1. Texture warning: dùng canvas procedural, không clone
-//   2. Zombie chết: raycast bằng parent traversal
-//   3. Màn hình đen trên mobile: cho phép game loop chạy khi không có PointerLock
-//   4. Camera reset đúng hướng bằng quaternion
-//   5. Force resize + render khi bắt đầu game
-//   6. Resize khi xoay màn hình
+// FIX:
+//   - Texture: canvas procedural
+//   - Zombie chết: parent traversal raycast
+//   - Màn hình đen mobile: isMobileModeActive() || controls.isLocked
+//   - Meta viewport trong index.html
+//   - body.playing class để ẩn mobile controls khi ở menu
 // ============================================================================
 
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
+/* DEBUG: hiển thị lỗi lên màn hình */
+window.addEventListener('error', (e) => {
+  const errDiv = document.createElement('div');
+  errDiv.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:red;color:white;padding:10px;font-size:12px;z-index:99999;word-break:break-all;';
+  errDiv.textContent = 'LỖI: ' + (e.message || e.error || 'unknown');
+  document.body.appendChild(errDiv);
+});
+window.addEventListener('unhandledrejection', (e) => {
+  const errDiv = document.createElement('div');
+  errDiv.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:orange;color:black;padding:10px;font-size:12px;z-index:99999;word-break:break-all;';
+  errDiv.textContent = 'PROMISE: ' + (e.reason && e.reason.message ? e.reason.message : JSON.stringify(e.reason));
+  document.body.appendChild(errDiv);
+});
+
 /* ============================================================================
-   PHẦN 1: HẰNG SỐ CẤU HÌNH
+   PHẦN 1: HẰNG SỐ
    ============================================================================ */
 const MAP_HALF = 40;
 const WALL_HEIGHT = 6;
@@ -45,9 +58,8 @@ const WEAPON_DEFS = {
   smg: { key: '4', name: 'TIỂU LIÊN', maxAmmo: 40, damage: 1, fireRate: 0.08, reloadTime: 1.6, pellets: 1, spread: 0.02, range: 200, auto: true, zoomFov: null, color: 0x2c2c2c, sound: 'smg' },
 };
 const NORMAL_FOV = 75;
-
-const SAVE_KEY = 'fps3d_school_save_v2';
-const SETTINGS_KEY = 'fps3d_school_settings_v2';
+const SAVE_KEY = 'fps3d_school_save_v3';
+const SETTINGS_KEY = 'fps3d_school_settings_v3';
 
 /* ============================================================================
    PHẦN 2: BIẾN TOÀN CỤC
@@ -87,45 +99,38 @@ let viewmodels = {};
 
 const settings = { volume: 60, sensitivity: 100, controlMode: 'auto' };
 
-/* ============================================================================
-   PHẦN 2B: CHẾ ĐỘ ĐIỀU KHIỂN PC / MOBILE
-   ============================================================================ */
 let activeMode = 'pc';
-
 const joystickVec = { x: 0, z: 0 };
-
 const mobileTouch = {
   joystick: { id: null, centerX: 0, centerY: 0, maxRadius: 50 },
   look: { id: null, lastX: 0, lastY: 0 },
 };
 
+/* ============================================================================
+   PHẦN 3: PHÁT HIỆN THIẾT BỊ + CHẾ ĐỘ
+   ============================================================================ */
 function detectDeviceType() {
   const hasTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
   const smallScreen = Math.min(window.innerWidth, window.innerHeight) < 820;
   return (hasTouch || smallScreen) ? 'mobile' : 'pc';
 }
-
 function resolveActiveMode() {
   return settings.controlMode === 'auto' ? detectDeviceType() : settings.controlMode;
 }
-
 function applyControlMode() {
   activeMode = resolveActiveMode();
   document.body.classList.toggle('mode-mobile', activeMode === 'mobile');
   document.body.classList.toggle('mode-pc', activeMode === 'pc');
-
   const fsBtn = document.getElementById('fullscreenBtn');
   if (document.documentElement.requestFullscreen) fsBtn.classList.add('supported');
   else fsBtn.classList.remove('supported');
 }
-
 function isMobileModeActive() { return activeMode === 'mobile'; }
 
 /* ============================================================================
-   PHẦN 3: ÂM THANH
+   PHẦN 4: ÂM THANH
    ============================================================================ */
 let audioCtx = null, masterGain = null, sfxGain = null;
-
 function getAudioCtx() {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -186,12 +191,9 @@ function playSound(type) {
 }
 
 /* ============================================================================
-   PHẦN 4: TEXTURE PROCEDURAL
+   PHẦN 5: TEXTURE PROCEDURAL
    ============================================================================ */
-let concreteCanvas = null;
-let grassCanvas = null;
-let glassCanvas = null;
-let blackboardCanvas = null;
+let concreteCanvas = null, grassCanvas = null, glassCanvas = null, blackboardCanvas = null;
 
 function buildConcreteCanvas() {
   const size = 512;
@@ -311,14 +313,13 @@ function makeTextureFromCanvas(canvas, rx, ry) {
   tex.needsUpdate = true;
   return tex;
 }
-
 function getConcrete(tint, rx, ry) {
   const tex = makeTextureFromCanvas(concreteCanvas, rx || 4, ry || 2);
   return new THREE.MeshStandardMaterial({ map: tex, color: tint, roughness: 0.95 });
 }
 
 /* ============================================================================
-   PHẦN 5: XÂY DỰNG SCENE
+   PHẦN 6: SCENE
    ============================================================================ */
 function initScene() {
   scene = new THREE.Scene();
@@ -329,7 +330,7 @@ function initScene() {
   camera.position.set(0, EYE_HEIGHT, 35);
 
   const canvas = document.getElementById('gameCanvas');
-  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
@@ -374,7 +375,6 @@ function addObstacle(mesh) {
   const box = new THREE.Box3().setFromObject(mesh);
   obstacles.push({ mesh, box });
 }
-
 function collidesWithObstacles(x, z, radius) {
   for (const obs of obstacles) {
     const b = obs.box;
@@ -382,7 +382,6 @@ function collidesWithObstacles(x, z, radius) {
   }
   return false;
 }
-
 function getStandingHeight(x, z) {
   if (x >= STAIR_X_MIN && x <= STAIR_X_MAX && z <= STAIR_Z_BOTTOM && z >= STAIR_Z_TOP) {
     const t = (STAIR_Z_BOTTOM - z) / (STAIR_Z_BOTTOM - STAIR_Z_TOP);
@@ -416,32 +415,25 @@ function buildPerimeterWalls() {
 function buildCourtyard() {
   const potPositions = [[-12, 32], [12, 32], [-18, 27], [18, 27]];
   potPositions.forEach(([x, z]) => {
-    const pot = new THREE.Mesh(
-      new THREE.CylinderGeometry(1.2, 1, 0.8, 10),
-      new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 1 })
-    );
+    const pot = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1, 0.8, 10),
+      new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 1 }));
     pot.position.set(x, 0.4, z);
     pot.castShadow = true; pot.receiveShadow = true;
-    scene.add(pot);
-    addObstacle(pot);
+    scene.add(pot); addObstacle(pot);
 
-    const bush = new THREE.Mesh(
-      new THREE.SphereGeometry(1.1, 8, 8),
-      new THREE.MeshStandardMaterial({ color: 0x2f4a2f, roughness: 1 })
-    );
+    const bush = new THREE.Mesh(new THREE.SphereGeometry(1.1, 8, 8),
+      new THREE.MeshStandardMaterial({ color: 0x2f4a2f, roughness: 1 }));
     bush.position.set(x, 1.4, z);
     bush.castShadow = true;
     scene.add(bush);
   });
 
-  const blockPositions = [[0, 30], [-6, 36], [8, 35]];
-  blockPositions.forEach(([x, z]) => {
+  [[0, 30], [-6, 36], [8, 35]].forEach(([x, z]) => {
     const size = 1.5 + Math.random() * 1;
     const block = new THREE.Mesh(new THREE.BoxGeometry(size, size, size), getConcrete(0x888880, 1, 1));
     block.position.set(x, size / 2, z);
     block.castShadow = true; block.receiveShadow = true;
-    scene.add(block);
-    addObstacle(block);
+    scene.add(block); addObstacle(block);
   });
 
   wallSegment(-11.5, 20, 17, 4, WALL_THICKNESS, 0xac9a6e, 4, 1);
@@ -454,14 +446,11 @@ function buildHallway() {
       const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.8, 5, 0.8), getConcrete(0x9a8f78, 1, 4));
       pillar.position.set(x, 2.5, z);
       pillar.castShadow = true; pillar.receiveShadow = true;
-      scene.add(pillar);
-      addObstacle(pillar);
+      scene.add(pillar); addObstacle(pillar);
     });
   }
-  const roof = new THREE.Mesh(
-    new THREE.BoxGeometry(14, 0.3, 30),
-    new THREE.MeshStandardMaterial({ color: 0x555550, roughness: 1 })
-  );
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(14, 0.3, 30),
+    new THREE.MeshStandardMaterial({ color: 0x555550, roughness: 1 }));
   roof.position.set(0, 5.2, 0);
   roof.receiveShadow = true;
   scene.add(roof);
@@ -496,13 +485,10 @@ function createClassroom(cx, cz, w, d, doorSide, useBrokenGlassDoor) {
       const segLen = (d - doorGap) / 2;
       wallSegment(x, cz - doorGap / 2 - segLen / 2, 0.3, wallH, segLen, tint, 1, segLen / 3);
       wallSegment(x, cz + doorGap / 2 + segLen / 2, 0.3, wallH, segLen, tint, 1, segLen / 3);
-
       if (useBrokenGlassDoor) {
         const glassMat = new THREE.MeshStandardMaterial({
           map: makeTextureFromCanvas(glassCanvas, 1, 1),
-          transparent: true,
-          opacity: 0.5,
-          side: THREE.DoubleSide
+          transparent: true, opacity: 0.5, side: THREE.DoubleSide
         });
         const glass = new THREE.Mesh(new THREE.PlaneGeometry(doorGap, wallH * 0.9), glassMat);
         glass.rotation.y = Math.PI / 2;
@@ -515,10 +501,8 @@ function createClassroom(cx, cz, w, d, doorSide, useBrokenGlassDoor) {
   });
 
   const boardZ = doorSide === 'north' ? cz + d / 2 - 0.3 : cz - d / 2 + 0.3;
-  const board = new THREE.Mesh(
-    new THREE.PlaneGeometry(3, 1.2),
-    new THREE.MeshStandardMaterial({ map: makeTextureFromCanvas(blackboardCanvas, 1, 1) })
-  );
+  const board = new THREE.Mesh(new THREE.PlaneGeometry(3, 1.2),
+    new THREE.MeshStandardMaterial({ map: makeTextureFromCanvas(blackboardCanvas, 1, 1) }));
   board.position.set(cx, 1.8, boardZ);
   scene.add(board);
 
@@ -529,14 +513,12 @@ function createClassroom(cx, cz, w, d, doorSide, useBrokenGlassDoor) {
       const desk = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.75, 0.55), getConcrete(0x6b5a3f, 1, 1));
       desk.position.set(dx, 0.375, dz);
       desk.castShadow = true; desk.receiveShadow = true;
-      scene.add(desk);
-      addObstacle(desk);
+      scene.add(desk); addObstacle(desk);
 
       const chair = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.6, 0.5), getConcrete(0x4a3f2f, 1, 1));
       chair.position.set(dx, 0.3, dz + row * 0.6);
       chair.castShadow = true; chair.receiveShadow = true;
-      scene.add(chair);
-      addObstacle(chair);
+      scene.add(chair); addObstacle(chair);
     }
   }
 }
@@ -547,31 +529,25 @@ function buildStairsAndFloor2() {
     const t = i / (stepCount - 1);
     const stepZ = STAIR_Z_BOTTOM - t * (STAIR_Z_BOTTOM - STAIR_Z_TOP);
     const stepY = t * FLOOR2_HEIGHT;
-    const step = new THREE.Mesh(
-      new THREE.BoxGeometry(STAIR_X_MAX - STAIR_X_MIN, 0.3, 1.1),
-      getConcrete(0x999080, 2, 1)
-    );
+    const step = new THREE.Mesh(new THREE.BoxGeometry(STAIR_X_MAX - STAIR_X_MIN, 0.3, 1.1), getConcrete(0x999080, 2, 1));
     step.position.set((STAIR_X_MIN + STAIR_X_MAX) / 2, stepY, stepZ);
     step.receiveShadow = true; step.castShadow = true;
     scene.add(step);
   }
-
   const platform = new THREE.Mesh(
     new THREE.BoxGeometry(PLATFORM_X_MAX - PLATFORM_X_MIN, 0.4, PLATFORM_Z_MAX - PLATFORM_Z_MIN),
-    getConcrete(0x9a9080, 4, 3)
-  );
+    getConcrete(0x9a9080, 4, 3));
   platform.position.set((PLATFORM_X_MIN + PLATFORM_X_MAX) / 2, FLOOR2_HEIGHT - 0.2, (PLATFORM_Z_MIN + PLATFORM_Z_MAX) / 2);
   platform.receiveShadow = true;
   scene.add(platform);
 
   const rail = new THREE.Mesh(new THREE.BoxGeometry(PLATFORM_X_MAX - PLATFORM_X_MIN, 1, 0.2), getConcrete(0x776b55, 4, 1));
   rail.position.set((PLATFORM_X_MIN + PLATFORM_X_MAX) / 2, FLOOR2_HEIGHT + 0.5, PLATFORM_Z_MIN);
-  scene.add(rail);
-  addObstacle(rail);
+  scene.add(rail); addObstacle(rail);
 }
 
 /* ============================================================================
-   PHẦN 6: PLAYER
+   PHẦN 7: PLAYER
    ============================================================================ */
 function doJump() {
   if (player.canJump) { player.velocity.y = 8; player.canJump = false; }
@@ -603,7 +579,6 @@ function initPlayerInput() {
       case 'ShiftLeft': case 'ShiftRight': player.isSprinting = false; break;
     }
   });
-
   document.addEventListener('mousedown', (e) => {
     if (gameState !== 'playing' || isMobileModeActive()) return;
     if (!controls.isLocked) { controls.lock(); return; }
@@ -643,7 +618,6 @@ function updatePlayer(delta) {
 
   const obj = controls.getObject();
   const oldX = obj.position.x, oldZ = obj.position.z;
-
   controls.moveRight(-player.velocity.x * delta);
   controls.moveForward(-player.velocity.z * delta);
 
@@ -663,7 +637,7 @@ function updatePlayer(delta) {
 }
 
 /* ============================================================================
-   PHẦN 7: VŨ KHÍ
+   PHẦN 8: VŨ KHÍ
    ============================================================================ */
 function initWeapons() {
   for (const name in WEAPON_DEFS) ammo[name] = WEAPON_DEFS[name].maxAmmo;
@@ -680,16 +654,12 @@ function initWeapons() {
     const cfg = configs[name];
     const group = new THREE.Group();
 
-    const body = new THREE.Mesh(
-      new THREE.BoxGeometry(...cfg.size),
-      new THREE.MeshStandardMaterial({ color: def.color, roughness: 0.5, metalness: 0.4 })
-    );
+    const body = new THREE.Mesh(new THREE.BoxGeometry(...cfg.size),
+      new THREE.MeshStandardMaterial({ color: def.color, roughness: 0.5, metalness: 0.4 }));
     group.add(body);
 
-    const barrel = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.03, 0.03, 0.25, 8),
-      new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.6 })
-    );
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.25, 8),
+      new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.6 }));
     barrel.rotation.x = Math.PI / 2;
     barrel.position.z = -cfg.size[2] / 2 - 0.1;
     group.add(barrel);
@@ -717,20 +687,17 @@ function switchWeapon(name) {
   setZoomHeld(false);
   updateMobileZoomButtonVisibility();
 }
-
 function updateMobileZoomButtonVisibility() {
   const btn = document.getElementById('mobileZoomBtn');
   if (!btn) return;
   btn.style.display = (isMobileModeActive() && currentWeaponName === 'sniper') ? 'flex' : 'none';
 }
-
 function startReload() {
   if (isReloading || ammo[currentWeaponName] === WEAPON_DEFS[currentWeaponName].maxAmmo) return;
   isReloading = true;
   reloadTimer = WEAPON_DEFS[currentWeaponName].reloadTime;
   playSound('reload');
 }
-
 function setZoomHeld(held) {
   if (currentWeaponName !== 'sniper') held = false;
   isZooming = held && WEAPON_DEFS.sniper.zoomFov != null;
@@ -738,7 +705,6 @@ function setZoomHeld(held) {
   camera.updateProjectionMatrix();
   document.getElementById('zoomVignette').style.display = isZooming ? 'block' : 'none';
 }
-
 function updateWeapons(delta) {
   if (weaponCooldown > 0) weaponCooldown -= delta;
   if (isReloading) {
@@ -754,21 +720,15 @@ function updateWeapons(delta) {
     attemptShoot();
   }
 }
-
 function canShoot() {
   return !isReloading && weaponCooldown <= 0 && ammo[currentWeaponName] > 0;
 }
 
-/* ============================================================================
-   FIX BẮN ZOMBIE — PARENT TRAVERSAL
-   ============================================================================ */
 function findEntityFromHit(hitObject, zombieGroups) {
   let obj = hitObject;
   while (obj) {
     if (zombieGroups.indexOf(obj) !== -1) {
-      for (const z of zombies) {
-        if (z.mesh === obj) return z;
-      }
+      for (const z of zombies) if (z.mesh === obj) return z;
       if (boss && boss.mesh === obj) return boss;
       return null;
     }
@@ -793,11 +753,8 @@ function attemptShoot() {
   scene.updateMatrixWorld(true);
 
   const zombieGroups = [];
-  for (const z of zombies) {
-    if (z.alive) zombieGroups.push(z.mesh);
-  }
+  for (const z of zombies) if (z.alive) zombieGroups.push(z.mesh);
   if (boss && boss.alive) zombieGroups.push(boss.mesh);
-
   const obstacleMeshes = obstacles.map(o => o.mesh);
 
   for (let i = 0; i < def.pellets; i++) {
@@ -808,7 +765,6 @@ function attemptShoot() {
     );
     raycaster.setFromCamera(ndc, camera);
     raycaster.far = def.range;
-
     createTracer(raycaster, def.range);
 
     const zombieHits = raycaster.intersectObjects(zombieGroups, true);
@@ -816,7 +772,6 @@ function attemptShoot() {
 
     const zHit = zombieHits.length > 0 ? zombieHits[0] : null;
     const oHit = obstacleHits.length > 0 ? obstacleHits[0] : null;
-
     const zDist = zHit ? zHit.distance : Infinity;
     const oDist = oHit ? oHit.distance : Infinity;
 
@@ -828,7 +783,7 @@ function attemptShoot() {
 }
 
 /* ============================================================================
-   PHẦN 8: ZOMBIE & BOSS
+   PHẦN 9: ZOMBIE & BOSS
    ============================================================================ */
 function createZombieMesh(scale) {
   scale = scale || 1;
@@ -848,7 +803,6 @@ function createZombieMesh(scale) {
   group.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   return group;
 }
-
 function createZombieEntity(position, level) {
   const mesh = createZombieMesh(1);
   mesh.position.copy(position);
@@ -863,7 +817,6 @@ function createZombieEntity(position, level) {
   scene.add(mesh);
   return entity;
 }
-
 function createBossEntity(position, level) {
   const scale = 3;
   const mesh = createZombieMesh(scale);
@@ -881,7 +834,6 @@ function createBossEntity(position, level) {
   scene.add(mesh);
   return entity;
 }
-
 function findValidSpawnPosition(playerPos, minDist) {
   for (let attempt = 0; attempt < 60; attempt++) {
     const x = (Math.random() - 0.5) * (INNER_BOUND * 2 - 4);
@@ -893,7 +845,6 @@ function findValidSpawnPosition(playerPos, minDist) {
   }
   return new THREE.Vector3(playerPos.x + 10, 0, playerPos.z + 10);
 }
-
 function updateZombieAI(z, delta, playerPos, elapsedTime) {
   if (!z.alive) return;
   const dist = z.mesh.position.distanceTo(playerPos);
@@ -931,7 +882,6 @@ function updateZombieAI(z, delta, playerPos, elapsedTime) {
     z.lastGrowlTime = elapsedTime;
     playSound('zombieGrowl');
   }
-
   const biteRange = z.isBoss ? 3.5 : 2.0;
   if (dist < biteRange) {
     if (elapsedTime - z.lastMeleeTime > 1) {
@@ -939,7 +889,6 @@ function updateZombieAI(z, delta, playerPos, elapsedTime) {
       damagePlayer(z.damagePerSec);
     }
   }
-
   if (z.isBoss) {
     z.summonCooldown -= delta;
     if (z.summonCooldown <= 0) {
@@ -948,7 +897,6 @@ function updateZombieAI(z, delta, playerPos, elapsedTime) {
     }
   }
 }
-
 function summonMinions(bossEntity) {
   for (let i = 0; i < 3; i++) {
     const angle = (i / 3) * Math.PI * 2;
@@ -958,7 +906,6 @@ function summonMinions(bossEntity) {
     zombies.push(createZombieEntity(pos, currentLevel));
   }
 }
-
 function hitZombie(entity, point, damage) {
   if (!entity.alive) return;
   entity.health -= damage;
@@ -971,7 +918,6 @@ function hitZombie(entity, point, damage) {
     updateScoreHUD();
   }
 }
-
 function damagePlayer(amount) {
   if (gameState !== 'playing') return;
   player.health = Math.max(0, player.health - amount);
@@ -981,7 +927,7 @@ function damagePlayer(amount) {
 }
 
 /* ============================================================================
-   PHẦN 9: HIỆU ỨNG
+   PHẦN 10: HIỆU ỨNG
    ============================================================================ */
 function createTracer(raycaster, range) {
   const origin = raycaster.ray.origin.clone();
@@ -992,14 +938,12 @@ function createTracer(raycaster, range) {
   scene.add(line);
   bulletTrails.push({ mesh: line, life: 0.06 });
 }
-
 function updateBulletTrails(delta) {
   for (let i = bulletTrails.length - 1; i >= 0; i--) {
     bulletTrails[i].life -= delta;
     if (bulletTrails[i].life <= 0) { scene.remove(bulletTrails[i].mesh); bulletTrails.splice(i, 1); }
   }
 }
-
 function createExplosion(position, color) {
   const particles = [];
   const geo = new THREE.SphereGeometry(0.12, 4, 4);
@@ -1027,7 +971,7 @@ function createExplosion(position, color) {
 }
 
 /* ============================================================================
-   PHẦN 10: HUD & MINIMAP
+   PHẦN 11: HUD & MINIMAP
    ============================================================================ */
 let hudEl = {};
 function initHUD() {
@@ -1055,7 +999,6 @@ function initHUD() {
     hudEl.heartsWrap.appendChild(span);
   }
 }
-
 function updateScoreHUD() { hudEl.score.textContent = 'Điểm: ' + score; }
 function updateLevelHUD() { hudEl.levelInfo.textContent = 'Màn: ' + currentLevel; }
 function updateEnemyCountHUD() {
@@ -1112,7 +1055,6 @@ function drawMinimap(playerPos, yaw) {
     const bd = (b.max.z - b.min.z) * scale;
     ctx.fillRect(bx, bz, Math.max(bw, 1), Math.max(bd, 1));
   });
-
   ctx.fillStyle = '#ff3333';
   zombies.forEach(z => {
     if (!z.alive) return;
@@ -1121,14 +1063,12 @@ function drawMinimap(playerPos, yaw) {
     if (x < 0 || x > w || y < 0 || y > h) return;
     ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
   });
-
   if (boss && boss.alive) {
     const x = cx + (boss.mesh.position.x - playerPos.x) * scale;
     const y = cy + (boss.mesh.position.z - playerPos.z) * scale;
     ctx.fillStyle = '#ff0000';
     ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.fill();
   }
-
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(yaw);
@@ -1143,7 +1083,7 @@ function drawMinimap(playerPos, yaw) {
 }
 
 /* ============================================================================
-   PHẦN 11: QUẢN LÝ MÀN CHƠI
+   PHẦN 12: MÀN CHƠI
    ============================================================================ */
 function loadLevel(level) {
   zombies.forEach(z => { if (z.mesh.parent) scene.remove(z.mesh); });
@@ -1156,15 +1096,12 @@ function loadLevel(level) {
     const pos = findValidSpawnPosition(playerPos, 10);
     zombies.push(createZombieEntity(pos, level));
   }
-
   updateLevelHUD();
   updateEnemyCountHUD();
   showLevelBanner('MÀN ' + level + (isBossLevel(level) ? ' — CÓ BOSS!' : ''));
 }
-
 function checkLevelProgress() {
   if (levelTransitioning) return;
-
   if (bossActive) {
     updateEnemyCountHUD();
     if (boss && !boss.alive) {
@@ -1180,16 +1117,10 @@ function checkLevelProgress() {
     }
     return;
   }
-
   const remaining = zombies.filter(z => z.alive).length;
   updateEnemyCountHUD();
   if (remaining > 0) return;
-
-  if (isBossLevel(currentLevel) && !bossSpawned) {
-    spawnBoss();
-    return;
-  }
-
+  if (isBossLevel(currentLevel) && !bossSpawned) { spawnBoss(); return; }
   levelTransitioning = true;
   saveProgress();
   setTimeout(() => {
@@ -1199,7 +1130,6 @@ function checkLevelProgress() {
     levelTransitioning = false;
   }, 1200);
 }
-
 function spawnBoss() {
   bossSpawned = true;
   bossActive = true;
@@ -1211,7 +1141,7 @@ function spawnBoss() {
 }
 
 /* ============================================================================
-   PHẦN 12: LƯU / TẢI
+   PHẦN 13: LƯU / TẢI
    ============================================================================ */
 function saveProgress() {
   try {
@@ -1225,7 +1155,6 @@ function loadSaveData() {
   catch (e) { return null; }
 }
 function clearSave() { try { localStorage.removeItem(SAVE_KEY); } catch (e) {} }
-
 function saveSettings() { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {} }
 function loadSettings() {
   try { const raw = localStorage.getItem(SETTINGS_KEY); if (raw) Object.assign(settings, JSON.parse(raw)); }
@@ -1233,23 +1162,21 @@ function loadSettings() {
 }
 
 /* ============================================================================
-   PHẦN 13: TRẠNG THÁI GAME
+   PHẦN 14: TRẠNG THÁI GAME
    ============================================================================ */
 function showScreen(id) {
   ['menuScreen', 'settingsScreen', 'gameOverScreen'].forEach(s => {
     document.getElementById(s).classList.toggle('hidden', s !== id);
   });
 }
-
 function goToMenu() {
   gameState = 'menu';
+  document.body.classList.remove('playing');
   if (controls) controls.unlock();
   document.getElementById('hud').style.display = 'none';
   showScreen('menuScreen');
   document.getElementById('continueBtn').disabled = !loadSaveData();
 }
-
-// FIX: reset camera đúng hướng bằng quaternion, reset joystick luôn
 function resetPlayerState() {
   const obj = controls.getObject();
   obj.position.set(0, EYE_HEIGHT, 35);
@@ -1261,7 +1188,6 @@ function resetPlayerState() {
   isMouseDown = false;
   resetJoystick();
 }
-
 function newGame() {
   clearSave();
   currentLevel = 1;
@@ -1280,11 +1206,9 @@ function newGame() {
   loadLevel(1);
   beginPlaying();
 }
-
 function continueGame() {
   const data = loadSaveData();
   if (!data) return;
-
   currentLevel = Math.max(1, data.level || 1);
   score = data.score || 0;
   levelTransitioning = false;
@@ -1302,10 +1226,9 @@ function continueGame() {
   loadLevel(currentLevel);
   beginPlaying();
 }
-
-// FIX: force resize + render 1 frame ngay để tránh màn hình đen lúc mới vào
 function beginPlaying() {
   showScreen(null);
+  document.body.classList.add('playing');
   document.getElementById('hud').style.display = 'block';
   gameState = 'playing';
   if (activeMode === 'pc') controls.lock();
@@ -1320,9 +1243,9 @@ function beginPlaying() {
   renderer.setSize(w, h);
   renderer.render(scene, camera);
 }
-
 function gameOver() {
   gameState = 'gameover';
+  document.body.classList.remove('playing');
   controls.unlock();
   clearSave();
   document.getElementById('hud').style.display = 'none';
@@ -1332,7 +1255,7 @@ function gameOver() {
 }
 
 /* ============================================================================
-   PHẦN 14: SỰ KIỆN GIAO DIỆN
+   PHẦN 15: UI EVENTS
    ============================================================================ */
 function initUIEvents() {
   document.getElementById('newGameBtn').addEventListener('click', newGame);
@@ -1371,7 +1294,6 @@ function initUIEvents() {
     saveSettings();
   });
 
-  // FIX: resize handler dùng chung cho cả resize và orientationchange
   function handleResize() {
     const w = window.innerWidth, h = window.innerHeight;
     camera.aspect = w / h;
@@ -1387,9 +1309,6 @@ function initUIEvents() {
   });
 }
 
-/* ============================================================================
-   PHẦN 14B: UI CHỌN CHẾ ĐỘ ĐIỀU KHIỂN
-   ============================================================================ */
 function initControlModeUI() {
   const radios = document.querySelectorAll('input[name="controlMode"]');
   radios.forEach(radio => {
@@ -1422,22 +1341,19 @@ function initControlModeUI() {
 }
 
 /* ============================================================================
-   PHẦN 14C: ĐIỀU KHIỂN CẢM ỨNG (MOBILE)
+   PHẦN 16: ĐIỀU KHIỂN CẢM ỨNG
    ============================================================================ */
 function isMobileButtonTarget(el) {
   return !!(el && el.closest && el.closest('.mobile-btn'));
 }
-
 function getJoystickCenter() {
   const rect = document.getElementById('joystickBase').getBoundingClientRect();
   return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
 }
-
 function updateJoystickVisual(dx, dz) {
   const knob = document.getElementById('joystickKnob');
-  knob.style.transform = `translate(${dx}px, ${dz}px)`;
+  if (knob) knob.style.transform = `translate(${dx}px, ${dz}px)`;
 }
-
 function engageJoystick(touch) {
   mobileTouch.joystick.id = touch.identifier;
   const center = getJoystickCenter();
@@ -1445,7 +1361,6 @@ function engageJoystick(touch) {
   mobileTouch.joystick.centerY = center.y;
   updateJoystickFromTouch(touch.clientX, touch.clientY);
 }
-
 function updateJoystickFromTouch(clientX, clientY) {
   const j = mobileTouch.joystick;
   const dx = clientX - j.centerX;
@@ -1456,19 +1371,15 @@ function updateJoystickFromTouch(clientX, clientY) {
   const knobX = Math.cos(angle) * clamped;
   const knobY = Math.sin(angle) * clamped;
   updateJoystickVisual(knobX, knobY);
-
   joystickVec.x = knobX / j.maxRadius;
   joystickVec.z = -knobY / j.maxRadius;
 }
-
 function resetJoystick() {
   mobileTouch.joystick.id = null;
   joystickVec.x = 0;
   joystickVec.z = 0;
-  const knob = document.getElementById('joystickKnob');
-  if (knob) updateJoystickVisual(0, 0);
+  updateJoystickVisual(0, 0);
 }
-
 function applyLookDelta(dx, dy) {
   const factor = 0.0026 * (settings.sensitivity / 100);
   const euler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -1568,14 +1479,13 @@ function initMobileControls() {
 }
 
 /* ============================================================================
-   PHẦN 15: GAME LOOP
+   PHẦN 17: GAME LOOP
    ============================================================================ */
 function animate() {
   requestAnimationFrame(animate);
   const delta = Math.min(clock.getDelta(), 0.1);
 
   if (gameState === 'playing') {
-    // FIX: cho phép update cả khi mobile (không dùng PointerLock) và PC (đã lock)
     const canUpdate = isMobileModeActive() || controls.isLocked;
     if (canUpdate && !levelTransitioning) {
       const elapsed = clock.getElapsedTime();
@@ -1588,7 +1498,6 @@ function animate() {
       updateBulletTrails(delta);
       checkLevelProgress();
     }
-
     updateHealthHUD();
     updateAmmoHUD();
     drawMinimap(controls.getObject().position, controls.getObject().rotation.y);
