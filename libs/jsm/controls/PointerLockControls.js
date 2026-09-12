@@ -24,10 +24,8 @@ class PointerLockControls extends EventDispatcher {
 
 		this.isLocked = false;
 
-		// Set to constrain the pitch of the camera
-		// Range is 0 to Math.PI radians
-		this.minPolarAngle = 0; // radians
-		this.maxPolarAngle = Math.PI; // radians
+		this.minPolarAngle = 0;
+		this.maxPolarAngle = Math.PI;
 
 		this.pointerSpeed = 1.0;
 
@@ -61,7 +59,7 @@ class PointerLockControls extends EventDispatcher {
 
 	}
 
-	getObject() { // retaining this method for backward compatibility
+	getObject() {
 
 		return this.camera;
 
@@ -74,9 +72,6 @@ class PointerLockControls extends EventDispatcher {
 	}
 
 	moveForward( distance ) {
-
-		// move forward parallel to the xz-plane
-		// assumes camera.up is y-up
 
 		const camera = this.camera;
 
@@ -98,7 +93,7 @@ class PointerLockControls extends EventDispatcher {
 
 	}
 
-	// FIX: Kiểm tra API trước khi gọi (iOS Safari không hỗ trợ Pointer Lock)
+	// FIX: kiểm tra API trước khi gọi — iOS Safari không hỗ trợ Pointer Lock
 	lock() {
 
 		if ( typeof this.domElement.requestPointerLock === 'function' ) {
@@ -109,7 +104,7 @@ class PointerLockControls extends EventDispatcher {
 
 	}
 
-	// FIX: Kiểm tra API trước khi gọi
+	// FIX: kiểm tra API trước khi gọi — tránh crash trên iOS Safari
 	unlock() {
 
 		const doc = this.domElement.ownerDocument;
@@ -123,8 +118,6 @@ class PointerLockControls extends EventDispatcher {
 	}
 
 }
-
-// event listeners
 
 function onMouseMove( event ) {
 
@@ -149,7 +142,6 @@ function onMouseMove( event ) {
 
 function onPointerlockChange() {
 
-	// FIX: Kiểm tra tồn tại của pointerLockElement trước khi truy cập
 	const doc = this.domElement.ownerDocument;
 
 	if ( ! doc ) return;
