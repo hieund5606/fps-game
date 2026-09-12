@@ -98,15 +98,27 @@ class PointerLockControls extends EventDispatcher {
 
 	}
 
+	// FIX: Kiểm tra API trước khi gọi (iOS Safari không hỗ trợ Pointer Lock)
 	lock() {
 
-		this.domElement.requestPointerLock();
+		if ( typeof this.domElement.requestPointerLock === 'function' ) {
+
+			this.domElement.requestPointerLock();
+
+		}
 
 	}
 
+	// FIX: Kiểm tra API trước khi gọi
 	unlock() {
 
-		this.domElement.ownerDocument.exitPointerLock();
+		const doc = this.domElement.ownerDocument;
+
+		if ( doc && typeof doc.exitPointerLock === 'function' ) {
+
+			doc.exitPointerLock();
+
+		}
 
 	}
 
@@ -137,7 +149,12 @@ function onMouseMove( event ) {
 
 function onPointerlockChange() {
 
-	if ( this.domElement.ownerDocument.pointerLockElement === this.domElement ) {
+	// FIX: Kiểm tra tồn tại của pointerLockElement trước khi truy cập
+	const doc = this.domElement.ownerDocument;
+
+	if ( ! doc ) return;
+
+	if ( doc.pointerLockElement === this.domElement ) {
 
 		this.dispatchEvent( _lockEvent );
 
