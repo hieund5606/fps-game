@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>FPS 3D - Trường Học Bỏ Hoang</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Segoe UI', Arial, sans-serif; }
+  canvas#gameCanvas { display: block; width: 100%; height: 100%; }
+
+  #hud { position: fixed; inset: 0; pointer-events: none; display: none; z-index: 10; }
+
+  #crosshair { position: absolute; top: 50%; left: 50%; width: 24px; height: 24px; transform: translate(-50%, -50%); }
+  #crosshair::before, #crosshair::after { content: ''; position: absolute; background: #00ff66; }
+  #crosshair::before { left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-50%); }
+  #crosshair::after { top: 50%; left: 0; height: 2px; width: 100%; transform: translateY(-50%); }
+  #crosshair .dot { position: absolute; top: 50%; left: 50%; width: 4px; height: 4px; background: #00ff66; border-radius: 50%; transform: translate(-50%,-50%); }
+
+  #topLeftHud { position: absolute; top: 16px; left: 16px; color: #fff; text-shadow: 2px 2px 3px rgba(0,0,0,0.9); }
+  #score { font-size: 24px; font-weight: bold; color: #ffd700; }
+  #levelInfo { font-size: 16px; margin-top: 4px; color: #9fe; }
+  #enemyCount { font-size: 14px; margin-top: 2px; color: #ccc; }
+  #bossHealthWrap { margin-top: 8px; width: 220px; display: none; }
+  #bossHealthLabel { font-size: 13px; color: #ff6666; margin-bottom: 2px; }
+  #bossHealthBarBg { width: 100%; height: 14px; background: rgba(0,0,0,0.6); border: 1px solid #a00; border-radius: 4px; overflow: hidden; }
+  #bossHealthBarFill { height: 100%; width: 100%; background: linear-gradient(90deg, #a00, #f33); transition: width 0.2s; }
+
+  #heartsWrap { position: absolute; bottom: 25px; left: 25px; display: flex; gap: 4px; }
+  .heart { font-size: 28px; filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.7)); }
+  .heart.empty { opacity: 0.25; }
+
+  #weaponHud { position: absolute; bottom: 25px; right: 25px; text-align: right; color: #fff; text-shadow: 2px 2px 3px rgba(0,0,0,0.8); }
+  #weaponName { font-size: 20px; font-weight: bold; color: #ffcc00; letter-spacing: 1px; }
+  #ammoCount { font-size: 34px; font-weight: bold; }
+  #ammoMax { font-size: 16px; color: #aaa; }
+  #reloadHint { font-size: 13px; color: #ffcc00; margin-top: 2px; min-height: 16px; }
+  #sprintHint { font-size: 12px; color: #7fdcff; margin-top: 2px; }
+
+  #minimapWrap {
+    position: absolute; top: 16px; right: 16px; width: 150px; height: 150px;
+    border: 2px solid rgba(255,255,255,0.5); border-radius: 8px; overflow: hidden;
+    background: rgba(10,10,10,0.7);
+  }
+  #minimapCanvas { width: 100%; height: 100%; display: block; }
+
+  #hitFlash { position: fixed; inset: 0; background: rgba(255,0,0,0.25); opacity: 0; pointer-events: none; transition: opacity 0.15s; z-index: 9; }
+  #zoomVignette { position: fixed; inset: 0; pointer-events: none; z-index: 8; display: none; background: radial-gradient(circle, transparent 30%, #000 68%); }
+  #levelBanner {
+    position: fixed; top: 40%; left: 50%; transform: translate(-50%, -50%);
+    font-size: 38px; color: #fff; text-shadow: 3px 3px 6px #000; opacity: 0;
+    transition: opacity 0.5s; z-index: 15; pointer-events: none; text-align: center;
+  }
+
+  .overlay {
+    position: fixed; inset: 0; background: rgba(6,6,10,0.92);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: #fff; z-index: 20; text-align: center;
+  }
+  .overlay h1 { font-size: 44px; margin-bottom: 12px; letter-spacing: 2px; }
+  .overlay p { font-size: 15px; color: #ccc; margin-bottom: 20px; max-width: 560px; line-height: 1.6; }
+  .btn {
+    padding: 13px 38px; font-size: 18px; font-weight: bold; margin: 6px;
+    background: linear-gradient(90deg, #00c853, #00e676);
+    border: none; border-radius: 8px; color: #000; cursor: pointer;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.4); transition: transform 0.1s; pointer-events: all;
+  }
+  .btn:hover { transform: scale(1.05); }
+  .btn:disabled { background: #555; color: #999; cursor: not-allowed; transform: none; }
+  .btn.secondary { background: linear-gradient(90deg, #607d8b, #78909c); }
+  .btn.danger { background: linear-gradient(90deg, #d32f2f, #f44336); color: #fff; }
+  #gameOverScreen h1 { color: #ff4444; }
+  .hidden { display: none !important; }
+  #finalScore, #finalLevel { font-size: 20px; color: #ffd700; margin-bottom: 8px; }
+
+  #settingsScreen .settingRow { display: flex; align-items: center; gap: 14px; width: 380px; margin: 12px 0; }
+  #settingsScreen label { width: 150px; text-align: left; }
+  #settingsScreen input[type=range] { flex: 1; }
+  #settingsScreen .val { width: 40px; text-align: right; color: #9fe; }
+
+  /* ============ CHẾ ĐỘ ĐIỀU KHIỂN (mục Cài đặt) ============ */
+  #controlModeRow { flex-direction: column; align-items: flex-start !important; gap: 8px !important; }
+  #controlModeOptions { display: flex; gap: 10px; width: 100%; }
+  #controlModeOptions label {
+    flex: 1; width: auto; text-align: center; padding: 10px 6px; border-radius: 8px;
+    background: rgba(255,255,255,0.08); border: 2px solid transparent; cursor: pointer; font-size: 14px;
+    pointer-events: all; user-select: none;
+  }
+  #controlModeOptions input[type=radio] { display: none; }
+  #controlModeOptions input[type=radio]:checked + span { color: #7fffb0; font-weight: bold; }
+  #controlModeOptions label:has(input:checked) { border-color: #00e676; background: rgba(0,230,118,0.12); }
+
+  /* ============ NÚT FULLSCREEN ============ */
+  #fullscreenBtn {
+    position: fixed; top: 8px; left: 50%; transform: translateX(-50%);
+    width: 40px; height: 40px; border-radius: 50%; background: rgba(0,0,0,0.5);
+    color: #fff; display: none; align-items: center; justify-content: center;
+    font-size: 20px; z-index: 30; pointer-events: all; cursor: pointer; user-select: none;
+  }
+
+  /* ============ ĐIỀU KHIỂN CẢM ỨNG (MOBILE) ============ */
+  #mobileControls { position: fixed; inset: 0; display: none; z-index: 25; pointer-events: none; }
+  #mobileControls * { pointer-events: auto; touch-action: none; -webkit-user-select: none; user-select: none; }
+
+  #joystickBase {
+    position: absolute; left: 28px; bottom: 28px; width: 130px; height: 130px;
+    border-radius: 50%; background: rgba(255,255,255,0.15); border: 2px solid rgba(255,255,255,0.35);
+  }
+  #joystickKnob {
+    position: absolute; left: 50%; top: 50%; width: 58px; height: 58px; margin: -29px 0 0 -29px;
+    border-radius: 50%; background: rgba(255,255,255,0.45); transition: transform 0.05s linear;
+  }
+
+  .mobile-btn {
+    position: absolute; border-radius: 50%; background: rgba(255,255,255,0.22);
+    border: 2px solid rgba(255,255,255,0.4); color: #fff; font-weight: bold;
+    display: flex; align-items: center; justify-content: center; text-align: center;
+    font-size: 13px; text-shadow: 1px 1px 2px rgba(0,0,0,0.6);
+  }
+  .mobile-btn.active { background: rgba(0,230,118,0.45); border-color: #00e676; }
+
+  #mobileShootBtn { right: 28px; bottom: 55px; width: 85px; height: 85px; font-size: 16px; background: rgba(255,60,60,0.35); }
+  #mobileJumpBtn { right: 130px; bottom: 130px; width: 62px; height: 62px; }
+  #mobileReloadBtn { right: 20px; bottom: 155px; width: 60px; height: 60px; }
+  #mobileSprintBtn { right: 130px; bottom: 40px; width: 62px; height: 62px; }
+  #mobileZoomBtn { right: 30px; bottom: 225px; width: 60px; height: 60px; display: none; }
+
+  #weaponSwitchWrap { position: absolute; right: 20px; top: 120px; display: flex; flex-direction: column; gap: 8px; }
+  .weapon-btn { position: static; width: 46px; height: 46px; font-size: 15px; }
+
+  /* Vùng nhìn (vuốt phải) chỉ để ghi chú trực quan nhẹ, không chặn thao tác khác */
+  #lookZoneHint {
+    position: absolute; right: 0; top: 0; width: 50%; height: 55%;
+    pointer-events: none;
+  }
+
+  /* ============ MEDIA QUERY CHO MÀN HÌNH NHỎ (ĐIỆN THOẠI/TABLET) ============ */
+  @media (max-width: 820px), (pointer: coarse) {
+    #score { font-size: 19px; }
+    #levelInfo { font-size: 13px; }
+    #enemyCount { font-size: 11px; }
+    #weaponName { font-size: 16px; }
+    #ammoCount { font-size: 26px; }
+    #minimapWrap { width: 110px; height: 110px; }
+    .overlay h1 { font-size: 30px; }
+    .overlay p { font-size: 13px; }
+    .btn { padding: 11px 26px; font-size: 15px; }
+  }
+
+  /* Khi ở chế độ mobile: ẩn con trỏ chuột, đẩy HUD súng lên tránh bị nút che, hiện khối điều khiển */
+  body.mode-mobile, body.mode-mobile * { cursor: none; }
+  body.mode-mobile #weaponHud { bottom: 260px; right: 20px; text-align: center; }
+  body.mode-mobile #heartsWrap { bottom: 20px; left: 20px; }
+  body.mode-mobile #heartsWrap .heart { font-size: 22px; }
+  body.mode-mobile #mobileControls { display: block; }
+  body.mode-mobile #fullscreenBtn.supported { display: flex; }
+</style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<div id="menuScreen" class="overlay">
+  <h1>🧟 TRƯỜNG HỌC BỎ HOANG</h1>
+  <p>
+    WASD: di chuyển · Giữ Shift: chạy nhanh · Chuột: xoay góc nhìn · Click trái: bắn (giữ để bắn liên thanh với SMG)<br>
+    Giữ chuột phải: zoom (Sniper) · Phím 1/2/3/4: đổi súng · R: nạp đạn · Space: nhảy<br>
+    Sống sót càng lâu càng khó — cứ mỗi 5 màn sẽ có 1 BOSS xuất hiện!
+  </p>
+  <button class="btn" id="newGameBtn">▶ CHƠI MỚI</button>
+  <button class="btn secondary" id="continueBtn">⏵ TIẾP TỤC</button>
+  <button class="btn secondary" id="settingsBtn">⚙ CÀI ĐẶT</button>
+  <button class="btn danger" id="exitBtn">✖ THOÁT</button>
+</div>
+
+<div id="settingsScreen" class="overlay hidden">
+  <h1>⚙ CÀI ĐẶT</h1>
+  <div class="settingRow">
+    <label>Âm lượng</label>
+    <input type="range" id="volumeSlider" min="0" max="100" value="60">
+    <span class="val" id="volumeVal">60%</span>
+  </div>
+  <div class="settingRow">
+    <label>Độ nhạy chuột</label>
+    <input type="range" id="sensSlider" min="10" max="300" value="100">
+    <span class="val" id="sensVal">1.0x</span>
+  </div>
+  <div class="settingRow" id="controlModeRow">
+    <label>Chế độ điều khiển</label>
+    <div id="controlModeOptions">
+      <label><input type="radio" name="controlMode" value="auto" checked><span>🔎 Tự động</span></label>
+      <label><input type="radio" name="controlMode" value="pc"><span>🖥 PC</span></label>
+      <label><input type="radio" name="controlMode" value="mobile"><span>📱 Mobile</span></label>
+    </div>
+  </div>
+  <button class="btn" id="settingsBackBtn">⬅ QUAY LẠI</button>
+</div>
+
+<div id="gameOverScreen" class="overlay hidden">
+  <h1>☠ GAME OVER</h1>
+  <div id="finalScore"></div>
+  <div id="finalLevel"></div>
+  <button class="btn" id="restartBtn">↻ CHƠI LẠI</button>
+  <button class="btn secondary" id="backToMenuBtn">⬅ VỀ MENU</button>
+</div>
+
+<div id="hud">
+  <div id="crosshair"><div class="dot"></div></div>
+
+  <div id="topLeftHud">
+    <div id="score">Điểm: 0</div>
+    <div id="levelInfo">Màn: 1</div>
+    <div id="enemyCount">Zombie còn lại: 0</div>
+    <div id="bossHealthWrap">
+      <div id="bossHealthLabel">☠ MÁU BOSS</div>
+      <div id="bossHealthBarBg"><div id="bossHealthBarFill"></div></div>
+    </div>
+  </div>
+
+  <div id="heartsWrap"></div>
+
+  <div id="weaponHud">
+    <div id="weaponName">SÚNG LỤC</div>
+    <div><span id="ammoCount">30</span> <span id="ammoMax">/ 30</span></div>
+    <div id="reloadHint"></div>
+    <div id="sprintHint"></div>
+  </div>
+
+  <div id="minimapWrap"><canvas id="minimapCanvas" width="150" height="150"></canvas></div>
+
+  <div id="levelBanner"></div>
+</div>
+
+<div id="hitFlash"></div>
+<div id="zoomVignette"></div>
+
+<!-- ============ ĐIỀU KHIỂN CẢM ỨNG (chỉ hiện khi ở Chế độ Mobile) ============ -->
+<div id="mobileControls">
+  <!-- Joystick ảo di chuyển (góc trái dưới) -->
+  <div id="joystickBase"><div id="joystickKnob"></div></div>
+
+  <!-- Vùng vuốt để xoay góc nhìn: toàn bộ nửa phải màn hình (không hiển thị viền) -->
+  <div id="lookZoneHint"></div>
+
+  <!-- Nút bắn -->
+  <div id="mobileShootBtn" class="mobile-btn">BẮN</div>
+  <!-- Nút nhảy -->
+  <div id="mobileJumpBtn" class="mobile-btn">NHẢY</div>
+  <!-- Nút nạp đạn -->
+  <div id="mobileReloadBtn" class="mobile-btn">NẠP</div>
+  <!-- Nút chạy nhanh (bấm để bật/tắt) -->
+  <div id="mobileSprintBtn" class="mobile-btn">CHẠY</div>
+  <!-- Nút zoom, chỉ hiện khi đang cầm Sniper -->
+  <div id="mobileZoomBtn" class="mobile-btn">ZOOM</div>
+
+  <!-- 4 nút đổi súng nhỏ -->
+  <div id="weaponSwitchWrap">
+    <div class="mobile-btn weapon-btn" data-weapon="pistol">1</div>
+    <div class="mobile-btn weapon-btn" data-weapon="shotgun">2</div>
+    <div class="mobile-btn weapon-btn" data-weapon="sniper">3</div>
+    <div class="mobile-btn weapon-btn" data-weapon="smg">4</div>
+  </div>
+</div>
+
+<!-- Nút bật/tắt toàn màn hình (chỉ hiện nếu trình duyệt hỗ trợ) -->
+<div id="fullscreenBtn">⛶</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module" src="main.js"></script>
+</body>
+</html>
