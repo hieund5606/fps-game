@@ -9,7 +9,7 @@
 // ============================================================================
 
 import * as THREE from 'three';
-import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+import { PointerLockControls } from './libs/jsm/controls/PointerLockControls_v2.js';
 
 /* DEBUG: hiển thị lỗi lên màn hình */
 window.addEventListener('error', (e) => {
