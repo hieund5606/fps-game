@@ -2,10 +2,14 @@
 <html lang="vi">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#1a1a20">
 <title>FPS 3D - Trường Học Bỏ Hoang</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Segoe UI', Arial, sans-serif; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Segoe UI', Arial, sans-serif; -webkit-tap-highlight-color: transparent; }
   canvas#gameCanvas { display: block; width: 100%; height: 100%; }
 
   #hud { position: fixed; inset: 0; pointer-events: none; display: none; z-index: 10; }
@@ -54,7 +58,7 @@
   .overlay {
     position: fixed; inset: 0; background: rgba(6,6,10,0.92);
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    color: #fff; z-index: 20; text-align: center;
+    color: #fff; z-index: 20; text-align: center; padding: 20px;
   }
   .overlay h1 { font-size: 44px; margin-bottom: 12px; letter-spacing: 2px; }
   .overlay p { font-size: 15px; color: #ccc; margin-bottom: 20px; max-width: 560px; line-height: 1.6; }
@@ -72,12 +76,11 @@
   .hidden { display: none !important; }
   #finalScore, #finalLevel { font-size: 20px; color: #ffd700; margin-bottom: 8px; }
 
-  #settingsScreen .settingRow { display: flex; align-items: center; gap: 14px; width: 380px; margin: 12px 0; }
-  #settingsScreen label { width: 150px; text-align: left; }
+  #settingsScreen .settingRow { display: flex; align-items: center; gap: 14px; width: 90%; max-width: 380px; margin: 12px 0; }
+  #settingsScreen label { width: 130px; text-align: left; font-size: 14px; }
   #settingsScreen input[type=range] { flex: 1; }
-  #settingsScreen .val { width: 40px; text-align: right; color: #9fe; }
+  #settingsScreen .val { width: 45px; text-align: right; color: #9fe; font-size: 14px; }
 
-  /* ============ CHẾ ĐỘ ĐIỀU KHIỂN (mục Cài đặt) ============ */
   #controlModeRow { flex-direction: column; align-items: flex-start !important; gap: 8px !important; }
   #controlModeOptions { display: flex; gap: 10px; width: 100%; }
   #controlModeOptions label {
@@ -86,10 +89,9 @@
     pointer-events: all; user-select: none;
   }
   #controlModeOptions input[type=radio] { display: none; }
-  #controlModeOptions input[type=radio]:checked + span { color: #7fffb0; font-weight: bold; }
   #controlModeOptions label:has(input:checked) { border-color: #00e676; background: rgba(0,230,118,0.12); }
+  #controlModeOptions label:has(input:checked) span { color: #7fffb0; font-weight: bold; }
 
-  /* ============ NÚT FULLSCREEN ============ */
   #fullscreenBtn {
     position: fixed; top: 8px; left: 50%; transform: translateX(-50%);
     width: 40px; height: 40px; border-radius: 50%; background: rgba(0,0,0,0.5);
@@ -97,7 +99,6 @@
     font-size: 20px; z-index: 30; pointer-events: all; cursor: pointer; user-select: none;
   }
 
-  /* ============ ĐIỀU KHIỂN CẢM ỨNG (MOBILE) ============ */
   #mobileControls { position: fixed; inset: 0; display: none; z-index: 25; pointer-events: none; }
   #mobileControls * { pointer-events: auto; touch-action: none; -webkit-user-select: none; user-select: none; }
 
@@ -127,13 +128,6 @@
   #weaponSwitchWrap { position: absolute; right: 20px; top: 120px; display: flex; flex-direction: column; gap: 8px; }
   .weapon-btn { position: static; width: 46px; height: 46px; font-size: 15px; }
 
-  /* Vùng nhìn (vuốt phải) chỉ để ghi chú trực quan nhẹ, không chặn thao tác khác */
-  #lookZoneHint {
-    position: absolute; right: 0; top: 0; width: 50%; height: 55%;
-    pointer-events: none;
-  }
-
-  /* ============ MEDIA QUERY CHO MÀN HÌNH NHỎ (ĐIỆN THOẠI/TABLET) ============ */
   @media (max-width: 820px), (pointer: coarse) {
     #score { font-size: 19px; }
     #levelInfo { font-size: 13px; }
@@ -146,13 +140,13 @@
     .btn { padding: 11px 26px; font-size: 15px; }
   }
 
-  /* Khi ở chế độ mobile: ẩn con trỏ chuột, đẩy HUD súng lên tránh bị nút che, hiện khối điều khiển */
-  body.mode-mobile, body.mode-mobile * { cursor: none; }
-  body.mode-mobile #weaponHud { bottom: 260px; right: 20px; text-align: center; }
-  body.mode-mobile #heartsWrap { bottom: 20px; left: 20px; }
-  body.mode-mobile #heartsWrap .heart { font-size: 22px; }
-  body.mode-mobile #mobileControls { display: block; }
-  body.mode-mobile #fullscreenBtn.supported { display: flex; }
+  /* QUAN TRỌNG: chỉ hiện điều khiển mobile khi đang CHƠI, không hiện trong menu */
+  body.mode-mobile.playing #mobileControls { display: block; }
+  body.mode-mobile.playing #fullscreenBtn.supported { display: flex; }
+  body.mode-mobile.playing, body.mode-mobile.playing * { cursor: none; }
+  body.mode-mobile.playing #weaponHud { bottom: 260px; right: 20px; text-align: center; }
+  body.mode-mobile.playing #heartsWrap { bottom: 20px; left: 20px; }
+  body.mode-mobile.playing #heartsWrap .heart { font-size: 22px; }
 </style>
 </head>
 <body>
@@ -180,7 +174,7 @@
     <span class="val" id="volumeVal">60%</span>
   </div>
   <div class="settingRow">
-    <label>Độ nhạy chuột</label>
+    <label>Độ nhạy</label>
     <input type="range" id="sensSlider" min="10" max="300" value="100">
     <span class="val" id="sensVal">1.0x</span>
   </div>
@@ -233,26 +227,13 @@
 <div id="hitFlash"></div>
 <div id="zoomVignette"></div>
 
-<!-- ============ ĐIỀU KHIỂN CẢM ỨNG (chỉ hiện khi ở Chế độ Mobile) ============ -->
 <div id="mobileControls">
-  <!-- Joystick ảo di chuyển (góc trái dưới) -->
   <div id="joystickBase"><div id="joystickKnob"></div></div>
-
-  <!-- Vùng vuốt để xoay góc nhìn: toàn bộ nửa phải màn hình (không hiển thị viền) -->
-  <div id="lookZoneHint"></div>
-
-  <!-- Nút bắn -->
   <div id="mobileShootBtn" class="mobile-btn">BẮN</div>
-  <!-- Nút nhảy -->
   <div id="mobileJumpBtn" class="mobile-btn">NHẢY</div>
-  <!-- Nút nạp đạn -->
   <div id="mobileReloadBtn" class="mobile-btn">NẠP</div>
-  <!-- Nút chạy nhanh (bấm để bật/tắt) -->
   <div id="mobileSprintBtn" class="mobile-btn">CHẠY</div>
-  <!-- Nút zoom, chỉ hiện khi đang cầm Sniper -->
   <div id="mobileZoomBtn" class="mobile-btn">ZOOM</div>
-
-  <!-- 4 nút đổi súng nhỏ -->
   <div id="weaponSwitchWrap">
     <div class="mobile-btn weapon-btn" data-weapon="pistol">1</div>
     <div class="mobile-btn weapon-btn" data-weapon="shotgun">2</div>
@@ -261,14 +242,13 @@
   </div>
 </div>
 
-<!-- Nút bật/tắt toàn màn hình (chỉ hiện nếu trình duyệt hỗ trợ) -->
 <div id="fullscreenBtn">⛶</div>
 
 <script type="importmap">
 {
   "imports": {
-    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    "three": "./libs/three.module.js",
+    "three/addons/": "./libs/jsm/"
   }
 }
 </script>
