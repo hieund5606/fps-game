@@ -1,11 +1,11 @@
 // ============================================================================
 // MAIN.JS — FPS 3D ZOMBIE: TRƯỜNG HỌC BỎ HOANG
-// FIX:
+// ĐÃ FIX:
 //   - Texture: canvas procedural
 //   - Zombie chết: parent traversal raycast
-//   - Màn hình đen mobile: isMobileModeActive() || controls.isLocked
-//   - Meta viewport trong index.html
-//   - body.playing class để ẩn mobile controls khi ở menu
+//   - Màn hình đen mobile: game loop chạy được khi không có PointerLock
+//   - Nút bấm iOS: bind cả click + touchend
+//   - Overlay z-index cao hơn mobile controls
 // ============================================================================
 
 import * as THREE from 'three';
@@ -107,7 +107,25 @@ const mobileTouch = {
 };
 
 /* ============================================================================
-   PHẦN 3: PHÁT HIỆN THIẾT BỊ + CHẾ ĐỘ
+   PHẦN 3: HELPER - BIND TAP CHO iOS
+   ============================================================================ */
+// Bind cả click và touchend để chắc chắn nhận sự kiện trên iOS Safari
+function bindTap(el, handler) {
+  if (!el) return;
+  let lastTouch = 0;
+  el.addEventListener('click', (e) => {
+    if (Date.now() - lastTouch < 500) return;
+    handler(e);
+  });
+  el.addEventListener('touchend', (e) => {
+    lastTouch = Date.now();
+    e.preventDefault();
+    handler(e);
+  }, { passive: false });
+}
+
+/* ============================================================================
+   PHẦN 4: PHÁT HIỆN THIẾT BỊ + CHẾ ĐỘ
    ============================================================================ */
 function detectDeviceType() {
   const hasTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
@@ -128,7 +146,7 @@ function applyControlMode() {
 function isMobileModeActive() { return activeMode === 'mobile'; }
 
 /* ============================================================================
-   PHẦN 4: ÂM THANH
+   PHẦN 5: ÂM THANH
    ============================================================================ */
 let audioCtx = null, masterGain = null, sfxGain = null;
 function getAudioCtx() {
@@ -191,7 +209,7 @@ function playSound(type) {
 }
 
 /* ============================================================================
-   PHẦN 5: TEXTURE PROCEDURAL
+   PHẦN 6: TEXTURE PROCEDURAL
    ============================================================================ */
 let concreteCanvas = null, grassCanvas = null, glassCanvas = null, blackboardCanvas = null;
 
@@ -319,7 +337,7 @@ function getConcrete(tint, rx, ry) {
 }
 
 /* ============================================================================
-   PHẦN 6: SCENE
+   PHẦN 7: SCENE
    ============================================================================ */
 function initScene() {
   scene = new THREE.Scene();
@@ -547,7 +565,7 @@ function buildStairsAndFloor2() {
 }
 
 /* ============================================================================
-   PHẦN 7: PLAYER
+   PHẦN 8: PLAYER
    ============================================================================ */
 function doJump() {
   if (player.canJump) { player.velocity.y = 8; player.canJump = false; }
@@ -637,7 +655,7 @@ function updatePlayer(delta) {
 }
 
 /* ============================================================================
-   PHẦN 8: VŨ KHÍ
+   PHẦN 9: VŨ KHÍ
    ============================================================================ */
 function initWeapons() {
   for (const name in WEAPON_DEFS) ammo[name] = WEAPON_DEFS[name].maxAmmo;
@@ -783,7 +801,7 @@ function attemptShoot() {
 }
 
 /* ============================================================================
-   PHẦN 9: ZOMBIE & BOSS
+   PHẦN 10: ZOMBIE & BOSS
    ============================================================================ */
 function createZombieMesh(scale) {
   scale = scale || 1;
@@ -927,7 +945,7 @@ function damagePlayer(amount) {
 }
 
 /* ============================================================================
-   PHẦN 10: HIỆU ỨNG
+   PHẦN 11: HIỆU ỨNG
    ============================================================================ */
 function createTracer(raycaster, range) {
   const origin = raycaster.ray.origin.clone();
@@ -971,7 +989,7 @@ function createExplosion(position, color) {
 }
 
 /* ============================================================================
-   PHẦN 11: HUD & MINIMAP
+   PHẦN 12: HUD & MINIMAP
    ============================================================================ */
 let hudEl = {};
 function initHUD() {
@@ -1083,7 +1101,7 @@ function drawMinimap(playerPos, yaw) {
 }
 
 /* ============================================================================
-   PHẦN 12: MÀN CHƠI
+   PHẦN 13: MÀN CHƠI
    ============================================================================ */
 function loadLevel(level) {
   zombies.forEach(z => { if (z.mesh.parent) scene.remove(z.mesh); });
@@ -1141,7 +1159,7 @@ function spawnBoss() {
 }
 
 /* ============================================================================
-   PHẦN 13: LƯU / TẢI
+   PHẦN 14: LƯU / TẢI
    ============================================================================ */
 function saveProgress() {
   try {
@@ -1162,7 +1180,7 @@ function loadSettings() {
 }
 
 /* ============================================================================
-   PHẦN 14: TRẠNG THÁI GAME
+   PHẦN 15: TRẠNG THÁI GAME
    ============================================================================ */
 function showScreen(id) {
   ['menuScreen', 'settingsScreen', 'gameOverScreen'].forEach(s => {
@@ -1255,22 +1273,22 @@ function gameOver() {
 }
 
 /* ============================================================================
-   PHẦN 15: UI EVENTS
+   PHẦN 16: UI EVENTS
    ============================================================================ */
 function initUIEvents() {
-  document.getElementById('newGameBtn').addEventListener('click', newGame);
-  document.getElementById('continueBtn').addEventListener('click', continueGame);
-  document.getElementById('settingsBtn').addEventListener('click', () => showScreen('settingsScreen'));
-  document.getElementById('settingsBackBtn').addEventListener('click', () => showScreen('menuScreen'));
-  document.getElementById('exitBtn').addEventListener('click', () => {
+  bindTap(document.getElementById('newGameBtn'), newGame);
+  bindTap(document.getElementById('continueBtn'), continueGame);
+  bindTap(document.getElementById('settingsBtn'), () => showScreen('settingsScreen'));
+  bindTap(document.getElementById('settingsBackBtn'), () => showScreen('menuScreen'));
+  bindTap(document.getElementById('exitBtn'), () => {
     if (confirm('Bạn có chắc muốn thoát game?')) {
       window.close();
       setTimeout(() => alert('Trình duyệt chặn đóng tab tự động. Vui lòng đóng tab thủ công.'), 300);
     }
   });
 
-  document.getElementById('restartBtn').addEventListener('click', newGame);
-  document.getElementById('backToMenuBtn').addEventListener('click', goToMenu);
+  bindTap(document.getElementById('restartBtn'), newGame);
+  bindTap(document.getElementById('backToMenuBtn'), goToMenu);
 
   const volumeSlider = document.getElementById('volumeSlider');
   const sensSlider = document.getElementById('sensSlider');
@@ -1327,7 +1345,7 @@ function initControlModeUI() {
   });
 
   const fsBtn = document.getElementById('fullscreenBtn');
-  fsBtn.addEventListener('click', () => {
+  bindTap(fsBtn, () => {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch(() => {});
     } else {
@@ -1341,7 +1359,7 @@ function initControlModeUI() {
 }
 
 /* ============================================================================
-   PHẦN 16: ĐIỀU KHIỂN CẢM ỨNG
+   PHẦN 17: ĐIỀU KHIỂN CẢM ỨNG
    ============================================================================ */
 function isMobileButtonTarget(el) {
   return !!(el && el.closest && el.closest('.mobile-btn'));
@@ -1479,7 +1497,7 @@ function initMobileControls() {
 }
 
 /* ============================================================================
-   PHẦN 17: GAME LOOP
+   PHẦN 18: GAME LOOP
    ============================================================================ */
 function animate() {
   requestAnimationFrame(animate);
